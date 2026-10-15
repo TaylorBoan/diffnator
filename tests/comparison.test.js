@@ -43,9 +43,13 @@ test('live panes fill and resize without reloading; fixed width, scroll sync and
   t.after(() => browser.close());
   const page = await browser.newPage(); await page.setViewport({ width: 1400, height: 800 });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  const params = new URLSearchParams({ u1: `http://127.0.0.1:${fixtures[0].address().port}/`, u2: `http://127.0.0.1:${fixtures[1].address().port}/`, w: '650', ra: 'iframe', rb: 'iframe', mode: 'sbs' });
+  const params = new URLSearchParams({ u1: `http://127.0.0.1:${fixtures[0].address().port}/`, u2: `http://127.0.0.1:${fixtures[1].address().port}/`, w: '650', ra: 'iframe', rb: 'iframe', mode: 'sbs', branchA: 'codex/avif-media-workflow', branchB: 'GBranch' });
   await page.goto(`http://127.0.0.1:${port}/?${params}`);
   await page.waitForFunction(() => [...document.querySelectorAll('#sbsIframe1,#sbsIframe2')].every(f => f.contentDocument?.querySelector('img')?.naturalWidth === 8 && f.contentDocument.body.dataset.fetched === 'ok'));
+  assert.deepEqual(await page.$$eval('.branch-label', labels => labels.map(e => ({text: e.textContent, hidden: e.hidden, pointerEvents: getComputedStyle(e).pointerEvents}))), [
+    { text: 'codex/avif-media-workflow', hidden: false, pointerEvents: 'none' },
+    { text: 'GBranch', hidden: false, pointerEvents: 'none' },
+  ]);
   let frames = page.frames().filter(f => f.url().includes('/local/'));
   assert.equal(frames.length, 2);
   assert.deepEqual(await Promise.all(frames.map(f => f.evaluate(() => localStorage.getItem('fixture-color')))), ['red', 'blue']);
@@ -80,6 +84,7 @@ test('live panes fill and resize without reloading; fixed width, scroll sync and
   await page.reload();
   await page.waitForFunction(() => [...document.querySelectorAll('#sbsIframe1,#sbsIframe2')].every(f => f.contentDocument?.querySelector('img')?.naturalWidth === 8));
   assert.equal(await page.$eval('#sbsSizing', e => e.value), 'fixed');
+  assert.equal(await page.$eval('#branchLabelB', e => e.textContent), 'GBranch');
   await page.select('#sbsSizing', 'fit');
   await assertFit(1400, 800);
   frames = page.frames().filter(f => f.url().includes('/local/'));

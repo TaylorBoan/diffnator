@@ -3,6 +3,8 @@
 
   const url1 = $('#url1');
   const url2 = $('#url2');
+  const branchA = $('#branchA');
+  const branchB = $('#branchB');
   const width = $('#width');
   const sbsSizing = $('#sbsSizing');
   const widthSlider = $('#widthSlider');
@@ -99,6 +101,8 @@
     const p = new URLSearchParams(location.search);
     if (p.has('u1')) url1.value = p.get('u1');
     if (p.has('u2')) url2.value = p.get('u2');
+    branchA.value = p.get('branchA') || '';
+    branchB.value = p.get('branchB') || '';
     if (p.has('w')) width.value = p.get('w');
     sbsSizing.value = p.get('sizing') === 'fixed' ? 'fixed' : 'fit';
     if (p.has('dpr')) dpr.value = p.get('dpr');
@@ -139,6 +143,8 @@
     const p = new URLSearchParams();
     if (url1.value) p.set('u1', url1.value);
     if (url2.value) p.set('u2', url2.value);
+    if (branchA.value.trim()) p.set('branchA', branchA.value.trim());
+    if (branchB.value.trim()) p.set('branchB', branchB.value.trim());
     p.set('w', width.value);
     p.set('sizing', sbsSizing.value);
     p.set('dpr', dpr.value);
@@ -349,7 +355,17 @@
     return /^https?:\/\/.+/.test(u) || /^file:\/\//.test(u) || u.startsWith('/') || /^[a-zA-Z]:\\/.test(u);
   }
 
+  function updateBranchLabels() {
+    [[branchA, $('#branchLabelA')], [branchB, $('#branchLabelB')]].forEach(([input, label]) => {
+      const name = input.value.trim();
+      label.textContent = name;
+      label.title = name;
+      label.hidden = !name;
+    });
+  }
+
   function render() {
+    updateBranchLabels();
     writeParams();
     updateModeControls();
     updateOverlayStyles();
@@ -758,6 +774,11 @@
       el.addEventListener('change', requestRender);
     });
     
+    [branchA, branchB].forEach(input => input.addEventListener('input', () => {
+      updateBranchLabels();
+      writeParams();
+    }));
+
     sbsSizing.addEventListener('change', () => {
       sbsView.dataset.sizing = sbsSizing.value;
       writeParams();

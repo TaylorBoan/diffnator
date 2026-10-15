@@ -308,3 +308,11 @@ Local iframe mode uses `/local/<origin>/...` paths and a runtime URL adapter for
 Run `npm test` for local-relay validation and Chromium regression coverage of asset isolation, equal widths, nested/page scrolling, boundary behavior, refresh and swipe controls.
 
 If the bundled Chromium is unavailable, set `PUPPETEER_EXECUTABLE_PATH` to an installed Chrome/Chromium executable when running `npm test`.
+
+### Branch labels
+
+Set the optional Branch label fields under URL A and URL B to show a small,
+noninteractive badge at the top left of each side-by-side preview. Shared links
+retain these names in `branchA` and `branchB`. Labels are supplied by the user;
+DiffNator does not infer Git branches from a website address. Leave a name blank
+to hide that badge. Labels do not change the preview viewport or reload either site.

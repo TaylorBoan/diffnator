@@ -554,6 +554,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sbs-col { 
+  position: relative;
   flex: 1 1 0;
   min-width: 0;
   overflow: auto; /* each column scrolls independently */
@@ -616,4 +617,23 @@ input[type="range"]::-moz-range-thumb {
   .overlay { 
     padding: var(--space-md);
   }
+}
+
+/* Labels belong to the comparison UI and never consume preview space. */
+.branch-label {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  z-index: 10;
+  max-width: calc(100% - 10px);
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(20, 22, 26, 0.78);
+  color: #fff;
+  font: 10px/1.4 ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
 }
