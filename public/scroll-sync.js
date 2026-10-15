@@ -37,8 +37,9 @@
           const target = selector ? otherDoc.querySelector(selector) : otherDoc.scrollingElement;
           if (!target) continue;
           // Suppress mirrored events even when the other page has a shorter panel.
-          target.scrollLeft = element.scrollLeft;
-          target.scrollTop = element.scrollTop;
+          // Explicit instant scrolling overrides a site's smooth-scroll CSS.
+          // Copy both axes atomically in this scroll event, with no timer/RAF lag.
+          target.scrollTo({ left: element.scrollLeft, top: element.scrollTop, behavior: 'instant' });
           mirrored.set(target, { x: target.scrollLeft, y: target.scrollTop });
         }
       };

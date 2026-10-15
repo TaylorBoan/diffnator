@@ -338,3 +338,7 @@ sizes report an unavailable status instead of claiming no differences.
 The status counts changed elements across the current documents; boxes appear
 only in the visible portion of each preview. Matching storefronts correctly show
 **No element differences**, even when their design-studio routes differ.
+
+Scroll mirroring copies both axes immediately in the source scroll event with
+`behavior: 'instant'`, avoiding a second smooth-scroll animation on the follower.
+Native browser/compositor scheduling can still introduce a frame of visual delay.

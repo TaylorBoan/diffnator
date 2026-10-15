@@ -28,7 +28,7 @@ test('live panes fill and resize without reloading; fixed width, scroll sync and
         return res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="${color}"/></svg>`);
       }
       res.setHeader('Content-Type', 'text/html');
-      res.end(`<html><head><style>body{margin:0;height:1800px}.panel{height:240px;overflow:auto}.content{height:1200px}</style></head><body><div class="panel"><div class="content"><button onclick="this.textContent='Clicked'">${color}</button></div></div><script>localStorage.setItem('fixture-color','${color}');const image=new Image();image.src='/icon.svg';document.body.append(image);fetch(new Request(location.origin+'/icon.svg')).then(r=>r.text()).then(text=>document.body.dataset.fetched=text.includes('fill=\"${color}\"')?'ok':'wrong');</script></body></html>`);
+      res.end(`<html><head><style>html{scroll-behavior:smooth}body{margin:0;height:1800px}.panel{height:240px;overflow:auto;scroll-behavior:smooth}.content{height:1200px}</style></head><body><div class="panel"><div class="content"><button onclick="this.textContent='Clicked'">${color}</button></div></div><script>localStorage.setItem('fixture-color','${color}');const image=new Image();image.src='/icon.svg';document.body.append(image);fetch(new Request(location.origin+'/icon.svg')).then(r=>r.text()).then(text=>document.body.dataset.fetched=text.includes('fill=\"${color}\"')?'ok':'wrong');</script></body></html>`);
     });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     fixtures.push(server);
@@ -89,20 +89,39 @@ test('live panes fill and resize without reloading; fixed width, scroll sync and
   await assertFit(1400, 800);
   frames = page.frames().filter(f => f.url().includes('/local/'));
   const positions = () => Promise.all(frames.map(f => f.$eval('.panel', e => e.scrollTop)));
+  // Observe after the sync handler: the peer must already match in the same
+  // scroll event, even when both sites opt into CSS smooth scrolling.
+  await page.evaluate(() => {
+    window.syncDrift = [];
+    window.pageDrift = [];
+    const a = document.querySelector('#sbsIframe1').contentDocument;
+    const b = document.querySelector('#sbsIframe2').contentDocument;
+    a.addEventListener('scroll', event => {
+      const source = event.target === a ? a.scrollingElement : event.target;
+      const peer = source === a.scrollingElement ? b.scrollingElement : b.querySelector('.panel');
+      if (peer && (source === a.scrollingElement || source.matches?.('.panel'))) {
+        (source === a.scrollingElement ? window.pageDrift : window.syncDrift).push(Math.abs(source.scrollTop - peer.scrollTop));
+      }
+    }, true);
+  });
   await frames[0].hover('.panel'); await page.mouse.wheel({ deltaY: 160 });
   await page.waitForFunction(() => document.querySelector('#sbsIframe2').contentDocument.querySelector('.panel').scrollTop === 160);
   assert.deepEqual(await positions(), [160, 160]);
+  assert.ok(await page.evaluate(() => syncDrift.length > 0 && Math.max(...syncDrift) <= 1), 'peer updates in the source scroll event despite smooth CSS');
   await frames[1].hover('.panel'); await page.mouse.wheel({ deltaY: -70 });
   await page.waitForFunction(() => document.querySelector('#sbsIframe1').contentDocument.querySelector('.panel').scrollTop === 90);
   assert.deepEqual(await positions(), [90, 90]);
   // A shorter peer must not bounce the source back when it reaches its limit.
   await frames[1].$eval('.content', e => e.style.height = '300px');
-  await frames[0].$eval('.panel', e => e.scrollTop = 400);
+  await frames[0].$eval('.panel', e => e.scrollTo({top:400, behavior:'instant'}));
   await page.waitForFunction(() => document.querySelector('#sbsIframe2').contentDocument.querySelector('.panel').scrollTop === 60);
   assert.deepEqual(await positions(), [400, 60]);
-  await frames[0].evaluate(() => scrollTo(0, 300));
+  await page.evaluate(() => pageDrift.length = 0);
+  await frames[0].evaluate(() => scrollTo({top:300, behavior:'instant'}));
   await page.waitForFunction(() => document.querySelector('#sbsIframe2').contentWindow.scrollY === 300);
-  await frames[1].evaluate(() => scrollTo(0, 180));
+  const pageDrift = await page.evaluate(() => window.pageDrift);
+  assert.ok(pageDrift.length > 0 && Math.max(...pageDrift) <= 1, 'page scroll drift: ' + JSON.stringify(pageDrift));
+  await frames[1].evaluate(() => scrollTo({top:180, behavior:'instant'}));
   await page.waitForFunction(() => document.querySelector('#sbsIframe1').contentWindow.scrollY === 180);
   // Repeated renders must not leave old document listeners behind.
   await page.click('#toggleDrawer');
