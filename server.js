@@ -7,6 +7,7 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 
 const app = express();
+require('./local-relay').installLocalRelay(app);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8086;
 
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));

@@ -177,7 +177,14 @@
     if (mode === 'proxy' && isHttpUrl(u)) {
       return `/proxy?url=${encodeURIComponent(u)}`;
     }
-    // For iframe mode with http URLs, use direct
+    // Loopback pages use an origin-scoped relay for assets and scroll access.
+    if (isHttpUrl(u)) {
+      const parsed = new URL(u);
+      if (['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) {
+        const token = btoa(parsed.origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        return `/local/${token}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    }
     return u;
   }
 
@@ -510,88 +517,26 @@
       setupDragForSide('a', !!sideAAsImage);
       setupDragForSide('b', !!sideBAsImage);
     } else {
-      // Side-by-side
-      if (useIframe) {
-        sbs1.style.display = 'none';
-        sbs2.style.display = 'none';
-        sbsIframe1.style.display = 'block';
-        sbsIframe2.style.display = 'block';
-        
-        // Enable iframe internal scrolling for side-by-side mode
-        sbsIframe1.setAttribute('scrolling', 'auto');
-        sbsIframe2.setAttribute('scrolling', 'auto');
-        
-        const src1 = toLiveIframeSrc(u1, mode) || 'about:blank';
-        const src2 = toLiveIframeSrc(u2, mode) || 'about:blank';
-        
-        // Add error handlers
-        sbsIframe1.onerror = () => showNotice(`❌ Failed to load: ${u1}`, true);
-        sbsIframe2.onerror = () => showNotice(`❌ Failed to load: ${u2}`, true);
-        
-        // Track load state to apply offsets only after both are ready
-        let loaded = { a: false, b: false };
-        let offsetApplied = false;
-        
-        const tryApply = () => {
-          if (loaded.a && loaded.b && !offsetApplied) {
-            offsetApplied = true;
-            setTimeout(() => {
-              console.log('[Offset] Both SBS iframes loaded, applying offsets...');
-              applyInitialStarts();
-            }, 600);
-          }
-        };
-        
-        const checkIfReady = () => {
-          try {
-            if (sbsIframe1.contentWindow && sbsIframe1.contentWindow.document && sbsIframe1.contentWindow.document.readyState === 'complete') {
-              loaded.a = true;
-            }
-            if (sbsIframe2.contentWindow && sbsIframe2.contentWindow.document && sbsIframe2.contentWindow.document.readyState === 'complete') {
-              loaded.b = true;
-            }
-            tryApply();
-          } catch(_) {}
-        };
-        
-        sbsIframe1.onload = () => { 
-          console.log('[Offset] sbsIframe1 loaded');
-          loaded.a = true; 
-          tryApply(); 
-        };
-        sbsIframe2.onload = () => { 
-          console.log('[Offset] sbsIframe2 loaded');
-          loaded.b = true; 
-          tryApply(); 
-        };
-        
-        sbsIframe1.src = src1;
-        sbsIframe2.src = src2;
-        
-        setTimeout(checkIfReady, 100);
-      } else {
-        sbsIframe1.style.display = 'none';
-        sbsIframe2.style.display = 'none';
-        sbs1.style.display = 'block';
-        sbs2.style.display = 'block';
-        const src1 = buildShotUrl(u1);
-        const src2 = buildShotUrl(u2);
-        
-        // Add error handlers for screenshots
-        sbs1.onerror = () => showNotice(`❌ Screenshot failed for: ${u1}. Server may be down.`, true);
-        sbs2.onerror = () => showNotice(`❌ Screenshot failed for: ${u2}. Server may be down.`, true);
-
-        showNotice('⏳ Loading screenshots...');
-        let sbsLoaded = { a: false, b: false };
-        const sbsMaybeClear = () => { if (sbsLoaded.a && sbsLoaded.b) showNotice(''); };
-        sbs1.onload = () => { sbsLoaded.a = true; sbsMaybeClear(); };
-        sbs2.onload = () => { sbsLoaded.b = true; sbsMaybeClear(); };
-
-        sbs1.src = u1 ? src1 : '';
-        sbs2.src = u2 ? src2 : '';
+      // Each side honors its own rendering mode, including mixed comparisons.
+      const sides = [
+        { url: u1, mode: renderA, frame: sbsIframe1, image: sbs1, upload: useUploadA, uploadUrl: uploadUrlA },
+        { url: u2, mode: renderB, frame: sbsIframe2, image: sbs2, upload: useUploadB, uploadUrl: uploadUrlB },
+      ];
+      for (const side of sides) {
+        const live = !side.upload && side.mode !== 'screenshot';
+        side.frame.style.display = live ? 'block' : 'none';
+        side.image.style.display = live ? 'none' : 'block';
+        if (live) {
+          side.frame.setAttribute('scrolling', 'auto');
+          side.frame.onload = applyInitialStarts;
+          side.frame.src = toLiveIframeSrc(side.url, side.mode) || 'about:blank';
+        } else {
+          side.frame.src = 'about:blank';
+          side.image.src = side.upload ? side.uploadUrl : buildShotUrl(side.url);
+        }
       }
     }
-    
+
     // Setup synchronized scrolling
     setupSyncScroll();
   }
@@ -599,7 +544,15 @@
   let syncScrollEnabled = true;
   let scrollTimeout = null;
   
+  let scrollBridgeCleanup = null;
+  let columnScrollCleanup = null;
   function setupSyncScroll() {
+    if (scrollBridgeCleanup) scrollBridgeCleanup();
+    if (columnScrollCleanup) columnScrollCleanup();
+    columnScrollCleanup = null;
+    scrollBridgeCleanup = null;
+    if (overlayWheelHandler) overlayView.removeEventListener('wheel', overlayWheelHandler);
+    if (overlayMessageHandler) window.removeEventListener('message', overlayMessageHandler);
     if (compareMode.value === 'sbs') {
       // Side-by-side scrolling
       const col1 = sbsView.querySelector('.sbs-col:first-child');
@@ -607,25 +560,9 @@
       
       if (!col1 || !col2) return;
       
-      const mode = renderMode.value;
-      const useIframe = mode === 'iframe' || mode === 'proxy';
-      
-      if (useIframe) {
-        // For iframes, use postMessage to sync scrolling
-        function onMessage(e) {
-          const d = (e && e.data) || {};
-          if (!d || !d.type) return;
-          // When one iframe scrolls, update the other
-          if (d.type === 'SCROLL_POS') {
-            try { if (sbsIframe1.contentWindow !== e.source && sbsIframe1.contentWindow) sbsIframe1.contentWindow.postMessage({ type: 'SYNC_SCROLL_TO', x: d.x, y: d.y }, '*'); } catch (_) {}
-            try { if (sbsIframe2.contentWindow !== e.source && sbsIframe2.contentWindow) sbsIframe2.contentWindow.postMessage({ type: 'SYNC_SCROLL_TO', x: d.x, y: d.y }, '*'); } catch (_) {}
-          } else if (d.type === 'SCROLL_BY') {
-            try { if (sbsIframe1.contentWindow !== e.source && sbsIframe1.contentWindow) sbsIframe1.contentWindow.postMessage({ type: 'SYNC_SCROLL_BY', dy: d.dy || 0 }, '*'); } catch (_) {}
-            try { if (sbsIframe2.contentWindow !== e.source && sbsIframe2.contentWindow) sbsIframe2.contentWindow.postMessage({ type: 'SYNC_SCROLL_BY', dy: d.dy || 0 }, '*'); } catch (_) {}
-          }
-        }
-        window.removeEventListener('message', onMessage);
-        window.addEventListener('message', onMessage);
+      const liveFrames = [sbsIframe1, sbsIframe2].filter(frame => frame.style.display !== 'none');
+      if (liveFrames.length === 2) {
+        scrollBridgeCleanup = DiffNatorScroll.connect(liveFrames);
       } else {
         // For screenshots (images), sync column scrolling
         function syncScroll1(e) {
@@ -658,8 +595,15 @@
         col2.removeEventListener('scroll', syncScroll2);
         col1.addEventListener('scroll', syncScroll1, { passive: true });
         col2.addEventListener('scroll', syncScroll2, { passive: true });
+        columnScrollCleanup = () => {
+          col1.removeEventListener('scroll', syncScroll1);
+          col2.removeEventListener('scroll', syncScroll2);
+          clearTimeout(scrollTimeout);
+          syncScrollEnabled = true;
+        };
       }
       } else if (compareMode.value === 'overlay') {
+        scrollBridgeCleanup = DiffNatorScroll.connect([iframe1, iframe2]);
         // Overlay: mixed handling per-side
         const renderA = renderModeA ? renderModeA.value : 'proxy';
         const renderB = renderModeB ? renderModeB.value : 'proxy';
@@ -682,8 +626,8 @@
             const bIsImg = (renderB === 'screenshot') || useUploadB;
 
           // Drive iframe sides via messaging
-          if (!aIsImg && iframe1.contentWindow) { try { iframe1.contentWindow.postMessage({ type: 'SYNC_SCROLL_BY', dy }, '*'); } catch (_) {} }
-          if (!bIsImg && iframe2.contentWindow) { try { iframe2.contentWindow.postMessage({ type: 'SYNC_SCROLL_BY', dy }, '*'); } catch (_) {} }
+          if (!aIsImg && !DiffNatorScroll.scrollBy(iframe1, dy) && iframe1.contentWindow) { try { iframe1.contentWindow.postMessage({ type: 'SYNC_SCROLL_BY', dy }, '*'); } catch (_) {} }
+          if (!bIsImg && !DiffNatorScroll.scrollBy(iframe2, dy) && iframe2.contentWindow) { try { iframe2.contentWindow.postMessage({ type: 'SYNC_SCROLL_BY', dy }, '*'); } catch (_) {} }
 
           // Drive image sides via virtual scroll
           if (aIsImg || bIsImg) {
@@ -1006,14 +950,23 @@
       swipe.value = String(Math.round(pct * 100));
       updateOverlayStyles();
     }
-    swipeHandle.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); });
-    window.addEventListener('mousemove', (e) => { if (!dragging) return; setSwipeByClientX(e.clientX); });
-    window.addEventListener('mouseup', () => { if (!dragging) return; dragging = false; writeParams(); });
+    swipeHandle.style.touchAction = 'none';
+    swipeHandle.addEventListener('pointerdown', event => {
+      dragging = true;
+      swipeHandle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    swipeHandle.addEventListener('pointermove', event => {
+      if (dragging) setSwipeByClientX(event.clientX);
+    });
+    const finishSwipe = () => {
+      if (!dragging) return;
+      dragging = false;
+      writeParams();
+    };
+    swipeHandle.addEventListener('pointerup', finishSwipe);
+    swipeHandle.addEventListener('pointercancel', finishSwipe);
 
-    // Touch support
-    swipeHandle.addEventListener('touchstart', (e) => { dragging = true; e.preventDefault(); });
-    window.addEventListener('touchmove', (e) => { if (!dragging) return; const t = e.touches[0]; setSwipeByClientX(t.clientX); });
-    window.addEventListener('touchend', () => { if (!dragging) return; dragging = false; writeParams(); });
   }
 
   // Initialize

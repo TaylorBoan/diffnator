@@ -9,7 +9,7 @@ A powerful, local-first web application for pixel-perfect comparison of websites
 
 ## ✨ Features
 
-> Status: Only the Live (proxy) + Overlay mode is fully tested and recommended right now. Other modes (Live iframe, Screenshot; Side-by-side) are available and generally work, but are considered experimental.
+> Local comparison: Live (iframe) supports side-by-side and overlay comparisons with synchronized scrolling, including matching nested scroll panels. Loopback pages are served through an origin-scoped local relay so each side retains its own assets and separate local/session storage. Remote direct iframes remain subject to browser origin restrictions; use Live (proxy) when appropriate.
 
 ### 🎭 Three Rendering Modes
 - **Live (iframe)**: Direct iframe embedding for `localhost` and `file://` URLs
@@ -21,7 +21,7 @@ A powerful, local-first web application for pixel-perfect comparison of websites
   - **Onion Skin**: Adjust opacity to see through layers
   - **Swipe**: Drag a handle to reveal differences
   - **Difference Blend**: Mix-blend-mode for visual diff
-- **Side-by-Side**: Compare pages next to each other with synchronized scrolling
+- **Side-by-Side**: Compare pages next to each other with bidirectional synchronized scrolling. Both sides use equal viewport widths, capped to the available half-window width.
 
 ### 🎯 Key Capabilities
 - ✅ Compare `https://` URLs, `http://localhost`, and `file://` paths
@@ -298,3 +298,13 @@ Made with ❤️ for designers and developers who care about pixel perfection.
 - `npm start` - Start everything (web server + proxy + screenshots)
 - `npm restart` - Restart all services
 - `npm stop` - Stop all services
+
+### Local iframe synchronization
+
+Choose Live (iframe) for both localhost URLs, then Side-by-side. Scrolling either page mirrors the same scroll container on the other page, including application panels. Containers match by element ID or DOM structure; unrelated page layouts may not align. Scroll positions clamp at each container’s own end without moving the source backward.
+
+Local iframe mode uses `/local/<origin>/...` paths and a runtime URL adapter for root-relative images, styles and fetch requests. The relay supports read-only GET/HEAD previews and does not forward browser cookies. Authenticated sessions, submissions, development WebSockets, and applications that require their original browser origin are outside this mode’s scope; open those pages directly. Remote direct iframes cannot synchronize unless they cooperate with the parent. Screenshot/live mixed modes render independently and do not synchronize their different scroll models.
+
+Run `npm test` for local-relay validation and Chromium regression coverage of asset isolation, equal widths, nested/page scrolling, boundary behavior, refresh and swipe controls.
+
+If the bundled Chromium is unavailable, set `PUPPETEER_EXECUTABLE_PATH` to an installed Chrome/Chromium executable when running `npm test`.
