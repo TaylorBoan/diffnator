@@ -547,13 +547,15 @@ input[type="range"]::-moz-range-thumb {
   display: flex; 
   gap: 0;
   background: var(--bg-primary);
-  /* Fill viewport, columns scroll internally */
+  /* Explicit viewport and frame heights also work in Safari. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
 .sbs-col { 
-  flex: 1; 
+  flex: 1 1 0;
+  min-width: 0;
   overflow: auto; /* each column scrolls independently */
   height: 100%;
   scrollbar-width: thin;
@@ -587,7 +589,14 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .sbs-col iframe {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+}
+
+/* Fit is the default even for old links containing a saved capture width. */
+.sbs:not([data-sizing="fixed"]) .sbs-col iframe {
+  width: 100%;
 }
 
 /* Responsive */

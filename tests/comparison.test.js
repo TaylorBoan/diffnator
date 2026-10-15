@@ -19,7 +19,7 @@ test('local relay rejects external origins and preserves scoped asset paths', ()
   assert.match(html, /src="\/\/cdn.test\/img"/);
 });
 
-test('side by side mirrors nested and page scrolling without loops; swipe still works', { timeout: 45000 }, async t => {
+test('live panes fill and resize without reloading; fixed width, scroll sync and swipe work', { timeout: 45000 }, async t => {
   const fixtures = [];
   for (const color of ['red', 'blue']) {
     const server = http.createServer((req, res) => {
@@ -28,7 +28,7 @@ test('side by side mirrors nested and page scrolling without loops; swipe still 
         return res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="${color}"/></svg>`);
       }
       res.setHeader('Content-Type', 'text/html');
-      res.end(`<html><head><style>body{margin:0;height:1800px}.panel{height:240px;overflow:auto}.content{height:1200px}</style></head><body><div class="panel"><div class="content">${color}</div></div><script>localStorage.setItem('fixture-color','${color}');const image=new Image();image.src='/icon.svg';document.body.append(image);fetch(new Request(location.origin+'/icon.svg')).then(r=>r.text()).then(text=>document.body.dataset.fetched=text.includes('fill=\"${color}\"')?'ok':'wrong');</script></body></html>`);
+      res.end(`<html><head><style>body{margin:0;height:1800px}.panel{height:240px;overflow:auto}.content{height:1200px}</style></head><body><div class="panel"><div class="content"><button onclick="this.textContent='Clicked'">${color}</button></div></div><script>localStorage.setItem('fixture-color','${color}');const image=new Image();image.src='/icon.svg';document.body.append(image);fetch(new Request(location.origin+'/icon.svg')).then(r=>r.text()).then(text=>document.body.dataset.fetched=text.includes('fill=\"${color}\"')?'ok':'wrong');</script></body></html>`);
     });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     fixtures.push(server);
@@ -46,7 +46,7 @@ test('side by side mirrors nested and page scrolling without loops; swipe still 
   const params = new URLSearchParams({ u1: `http://127.0.0.1:${fixtures[0].address().port}/`, u2: `http://127.0.0.1:${fixtures[1].address().port}/`, w: '650', ra: 'iframe', rb: 'iframe', mode: 'sbs' });
   await page.goto(`http://127.0.0.1:${port}/?${params}`);
   await page.waitForFunction(() => [...document.querySelectorAll('#sbsIframe1,#sbsIframe2')].every(f => f.contentDocument?.querySelector('img')?.naturalWidth === 8 && f.contentDocument.body.dataset.fetched === 'ok'));
-  const frames = page.frames().filter(f => f.url().includes('/local/'));
+  let frames = page.frames().filter(f => f.url().includes('/local/'));
   assert.equal(frames.length, 2);
   assert.deepEqual(await Promise.all(frames.map(f => f.evaluate(() => localStorage.getItem('fixture-color')))), ['red', 'blue']);
   const pixels = await Promise.all(frames.map(f => f.evaluate(() => {
@@ -56,7 +56,33 @@ test('side by side mirrors nested and page scrolling without loops; swipe still 
     return [...ctx.getImageData(0, 0, 1, 1).data];
   })));
   assert.deepEqual(pixels, [[255, 0, 0, 255], [0, 0, 255, 255]]);
+  const assertFit = async (width, height) => {
+    await page.setViewport({ width, height });
+    await page.waitForFunction(() => [...document.querySelectorAll('#sbsIframe1,#sbsIframe2')].every(f => {
+      const r = f.getBoundingClientRect();
+      return Math.abs(r.width - innerWidth / 2) < 1 && r.height === innerHeight && f.contentWindow.innerWidth === Math.round(r.width);
+    }));
+    assert.deepEqual(await page.$$eval('.sbs-col', cols => cols.map(c => ({ x: c.offsetLeft, width: c.clientWidth, height: c.clientHeight, overflow: c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight }))), [
+      { x: 0, width: width / 2, height, overflow: false },
+      { x: width / 2, width: width / 2, height, overflow: false },
+    ]);
+  };
+  await frames[0].click('button');
+  await assertFit(1400, 800);
+  await assertFit(2400, 1100);
+  await assertFit(900, 650);
+  await assertFit(1400, 800);
+  assert.equal(await frames[0].$eval('button', e => e.textContent), 'Clicked');
+  // Fixed width is explicit and survives a shared link/reload.
+  await page.select('#sbsSizing', 'fixed');
   assert.deepEqual(await Promise.all(frames.map(f => f.evaluate(() => innerWidth))), [650, 650]);
+  assert.equal(new URL(page.url()).searchParams.get('sizing'), 'fixed');
+  await page.reload();
+  await page.waitForFunction(() => [...document.querySelectorAll('#sbsIframe1,#sbsIframe2')].every(f => f.contentDocument?.querySelector('img')?.naturalWidth === 8));
+  assert.equal(await page.$eval('#sbsSizing', e => e.value), 'fixed');
+  await page.select('#sbsSizing', 'fit');
+  await assertFit(1400, 800);
+  frames = page.frames().filter(f => f.url().includes('/local/'));
   const positions = () => Promise.all(frames.map(f => f.$eval('.panel', e => e.scrollTop)));
   await frames[0].hover('.panel'); await page.mouse.wheel({ deltaY: 160 });
   await page.waitForFunction(() => document.querySelector('#sbsIframe2').contentDocument.querySelector('.panel').scrollTop === 160);
@@ -71,6 +97,8 @@ test('side by side mirrors nested and page scrolling without loops; swipe still 
   assert.deepEqual(await positions(), [400, 60]);
   await frames[0].evaluate(() => scrollTo(0, 300));
   await page.waitForFunction(() => document.querySelector('#sbsIframe2').contentWindow.scrollY === 300);
+  await frames[1].evaluate(() => scrollTo(0, 180));
+  await page.waitForFunction(() => document.querySelector('#sbsIframe1').contentWindow.scrollY === 180);
   // Repeated renders must not leave old document listeners behind.
   await page.click('#toggleDrawer');
   await page.click('#refreshBtn');

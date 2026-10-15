@@ -4,6 +4,7 @@
   const url1 = $('#url1');
   const url2 = $('#url2');
   const width = $('#width');
+  const sbsSizing = $('#sbsSizing');
   const widthSlider = $('#widthSlider');
   const widthValue = $('#widthValue');
   const dpr = $('#dpr');
@@ -99,6 +100,7 @@
     if (p.has('u1')) url1.value = p.get('u1');
     if (p.has('u2')) url2.value = p.get('u2');
     if (p.has('w')) width.value = p.get('w');
+    sbsSizing.value = p.get('sizing') === 'fixed' ? 'fixed' : 'fit';
     if (p.has('dpr')) dpr.value = p.get('dpr');
     if (p.has('wait')) wait.value = p.get('wait');
     // Per-side render modes, backward compatible with legacy 'render'
@@ -138,6 +140,7 @@
     if (url1.value) p.set('u1', url1.value);
     if (url2.value) p.set('u2', url2.value);
     p.set('w', width.value);
+    p.set('sizing', sbsSizing.value);
     p.set('dpr', dpr.value);
     if (Number(wait.value) > 0) p.set('wait', String(wait.value));
     if (renderModeA) p.set('ra', renderModeA.value);
@@ -354,6 +357,8 @@
     const ioVal = interactMode ? interactMode.value : 'a';
     overlayView.classList.remove('io-none', 'io-a', 'io-b');
     overlayView.classList.add(`io-${ioVal}`);
+
+    sbsView.dataset.sizing = sbsSizing.value;
 
     // Set viewport width CSS variable
     const viewportWidth = width.value || 1440;
@@ -753,6 +758,11 @@
       el.addEventListener('change', requestRender);
     });
     
+    sbsSizing.addEventListener('change', () => {
+      sbsView.dataset.sizing = sbsSizing.value;
+      writeParams();
+    });
+
     // Other controls use normal debounce
     [width, dpr, wait, renderModeA, renderModeB, compareMode, overlayMode, interactMode]
       .forEach((el) => el.addEventListener('change', requestRender));
