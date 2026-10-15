@@ -130,6 +130,10 @@
       <div class="controls-hint">Tip: Scroll works better when mouse pointer is outside of the viewport.</div>
     </section>
 
+    <div id="highlightControls" class="highlight-controls" hidden>
+      <button id="highlightToggle" type="button" aria-pressed="false">Highlights: off</button>
+      <span id="highlightStatus" role="status" hidden></span>
+    </div>
     <section class="view">
       <div id="overlayView" class="overlay">
         <div class="canvas" id="overlayCanvas" style="--canvas-width: 1440px; --canvas-height: 900px;">
@@ -185,11 +189,13 @@
 
       <div id="sbsView" class="sbs" style="display:none;">
         <div class="sbs-col">
+          <div id="diffLayerA" class="diff-layer" aria-hidden="true"></div>
           <span id="branchLabelA" class="branch-label" hidden></span>
           <img id="sbs1" alt="First screenshot (SxS)" />
           <iframe id="sbsIframe1" style="display:none;" title="First page (SxS)"></iframe>
         </div>
         <div class="sbs-col">
+          <div id="diffLayerB" class="diff-layer" aria-hidden="true"></div>
           <span id="branchLabelB" class="branch-label" hidden></span>
           <img id="sbs2" alt="Second screenshot (SxS)" />
           <iframe id="sbsIframe2" style="display:none;" title="Second page (SxS)"></iframe>
@@ -200,6 +206,7 @@
     
 
     <script src="scroll-sync.js"></script>
+    <script src="live-diff.js"></script>
     <script src="app.js"></script>
   </body>
   </html>

@@ -118,3 +118,73 @@ test('live panes fill and resize without reloading; fixed width, scroll sync and
   assert.ok(Number(await page.$eval('#swipe', e => e.value)) > 50);
   assert.deepEqual(errors, []);
 });
+
+
+test('live highlights find text, style, layout and same-path image changes, clear on toggle, and follow navigation', { timeout: 45000 }, async t => {
+  const sites = [];
+  for (const side of ['a', 'b']) {
+    const fixture = http.createServer((req, res) => {
+      if (req.url === '/same-image.svg') {
+        res.setHeader('Content-Type', 'image/svg+xml');
+        return res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="${side === 'a' ? 'red' : 'blue'}"/></svg>`);
+      }
+      const changed = req.url === '/changed' && side === 'b';
+      res.setHeader('Content-Type', 'text/html');
+      res.end(`<html><body style="margin:0;height:2400px"><span style="position:absolute;width:1px;height:1px;clip:rect(0,0,0,0)">${side} hidden accessibility copy</span><h1 id="heading">${changed ? 'Changed title' : 'Same title'}</h1><p id="color" style="color:${changed ? 'red' : 'black'}">Same paragraph</p><div id="layout" style="width:${changed ? '120' : '80'}px;height:20px;background:#abc"></div>${req.url === '/images' ? '<img id="image" src="/same-image.svg">' : ''}${changed ? '<p id="added">Added text</p>' : '<p id="removed">Removed text</p>'}<div style="margin-top:1200px"><p id="lower">${changed ? 'Changed lower text' : 'Same lower text'}</p></div><img loading="lazy" src="/never-loaded.png" style="margin-top:1000px"><a id="navigate" href="/same">Next page</a></body></html>`);
+    }).listen(0, '127.0.0.1');
+    await once(fixture, 'listening'); sites.push(fixture);
+    t.after(() => new Promise(resolve => fixture.close(resolve)));
+  }
+  const reserve = net.createServer().listen(0, '127.0.0.1'); await once(reserve, 'listening');
+  const port = reserve.address().port; await new Promise(resolve => reserve.close(resolve));
+  const child = spawn(process.execPath, ['server.js'], { cwd: require('node:path').join(__dirname, '..'), env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => child.kill());
+  await new Promise((resolve, reject) => { child.stdout.on('data', data => { if (String(data).includes('DiffNator running')) resolve(); }); child.once('error', reject); });
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] }); t.after(() => browser.close());
+  const page = await browser.newPage(); await page.setViewport({ width: 1400, height: 800 });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  const target = (i, path) => `http://127.0.0.1:${sites[i].address().port}${path}`;
+  const go = async (path, enabled = '1') => {
+    const params = new URLSearchParams({ u1: target(0, path), u2: target(1, path), mode: 'sbs', ra: 'iframe', rb: 'iframe', highlights: enabled });
+    await page.goto(`http://127.0.0.1:${port}/?${params}`);
+    await page.waitForFunction(() => document.querySelector('#highlightStatus').dataset.state === 'ready');
+  };
+  await go('/same');
+  assert.equal(await page.$eval('#highlightStatus', e => e.dataset.count), '0');
+  assert.equal(await page.$$eval('.diff-mark', els => els.length), 0);
+  await go('/changed');
+  assert.ok(Number(await page.$eval('#highlightStatus', e => e.dataset.count)) >= 5);
+  for (const kind of ['content', 'style', 'layout', 'added', 'removed']) {
+    assert.ok(await page.$$eval(`.diff-mark[data-kind~="${kind}"]`, els => els.length), kind);
+  }
+  const first = page.frames().find(f => f.url().includes('/local/') && f.url().endsWith('/changed'));
+  // Marks cannot intercept clicks; the point on a highlighted heading still hits the iframe.
+  assert.equal(await page.$eval('.diff-layer', e => getComputedStyle(e).pointerEvents), 'none');
+  const stamp = await first.evaluate(() => window.testStamp = Math.random());
+  await page.click('#highlightToggle');
+  assert.equal(await page.$$eval('.diff-mark', els => els.length), 0);
+  assert.equal(new URL(page.url()).searchParams.get('highlights'), '0');
+  assert.equal(await first.evaluate(() => window.testStamp), stamp);
+  await page.click('#highlightToggle');
+  await page.waitForFunction(() => document.querySelectorAll('.diff-mark').length > 0);
+  await first.evaluate(() => scrollTo(0, 1250));
+  await page.waitForFunction(() => document.querySelector('#sbsIframe2').contentWindow.scrollY === 1250);
+  await page.waitForFunction(() => [...document.querySelectorAll('#diffLayerA .diff-mark')].some(e => parseFloat(e.style.top) < 800));
+  await page.setViewport({ width: 1800, height: 900 });
+  await page.waitForFunction(() => document.querySelector('#sbsIframe1').contentWindow.innerWidth === 900 && document.querySelectorAll('.diff-mark').length > 0);
+  // Matching pages stay clean despite their different ports and origin-scoped relay paths.
+  await go('/images');
+  assert.equal(await page.$$eval('.diff-mark[data-kind~="image"]', els => els.length), 2);
+  // In-frame navigation rebinds comparison/scroll handlers and removes stale marks.
+  const frames = page.frames().filter(f => f.url().includes('/local/'));
+  await Promise.all(frames.map(f => f.goto(f.url().replace('/images', '/same'))));
+  await page.waitForFunction(() => document.querySelector('#highlightStatus').dataset.count === '0');
+  // Dynamic text edits are detected without a page reload.
+  await frames[1].$eval('#heading', e => e.textContent = 'Edited in place');
+  await page.waitForFunction(() => Number(document.querySelector('#highlightStatus').dataset.count) > 0);
+  // Inaccessible comparisons report unavailable; they must never claim zero differences.
+  await page.$eval('#sbsIframe2', f => f.src = 'data:text/html,<h1>Inaccessible</h1>');
+  await page.waitForFunction(() => document.querySelector('#highlightStatus').dataset.state === 'unavailable');
+  assert.equal(await page.$eval('#highlightStatus', e => e.hasAttribute('data-count')), false);
+  assert.deepEqual(errors, []);
+});

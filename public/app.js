@@ -60,6 +60,8 @@
   const zoomAVal = $('#zoomAVal');
   const zoomBVal = $('#zoomBVal');
 
+  let highlightsEnabled = false;
+  let highlightCleanup = null;
   const sbsView = $('#sbsView');
   const sbs1 = $('#sbs1');
   const sbs2 = $('#sbs2');
@@ -99,6 +101,7 @@
 
   function readParams() {
     const p = new URLSearchParams(location.search);
+    highlightsEnabled = p.get('highlights') === '1';
     if (p.has('u1')) url1.value = p.get('u1');
     if (p.has('u2')) url2.value = p.get('u2');
     branchA.value = p.get('branchA') || '';
@@ -147,6 +150,7 @@
     if (branchB.value.trim()) p.set('branchB', branchB.value.trim());
     p.set('w', width.value);
     p.set('sizing', sbsSizing.value);
+    p.set('highlights', highlightsEnabled ? '1' : '0');
     p.set('dpr', dpr.value);
     if (Number(wait.value) > 0) p.set('wait', String(wait.value));
     if (renderModeA) p.set('ra', renderModeA.value);
@@ -365,6 +369,7 @@
   }
 
   function render() {
+    if (highlightCleanup) { highlightCleanup(); highlightCleanup = null; }
     updateBranchLabels();
     writeParams();
     updateModeControls();
@@ -560,6 +565,14 @@
 
     // Setup synchronized scrolling
     setupSyncScroll();
+    $('#highlightControls').hidden = compareMode.value !== 'sbs';
+    if (compareMode.value === 'sbs') {
+      highlightCleanup = DiffNatorDiff.connect({
+        frames: [sbsIframe1, sbsIframe2], layers: [$('#diffLayerA'), $('#diffLayerB')],
+        button: $('#highlightToggle'), status: $('#highlightStatus'), enabled: highlightsEnabled,
+        onToggle: enabled => { highlightsEnabled = enabled; writeParams(); }
+      });
+    }
   }
   
   let syncScrollEnabled = true;

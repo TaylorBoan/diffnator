@@ -316,3 +316,25 @@ noninteractive badge at the top left of each side-by-side preview. Shared links
 retain these names in `branchA` and `branchB`. Labels are supplied by the user;
 DiffNator does not infer Git branches from a website address. Leave a name blank
 to hide that badge. Labels do not change the preview viewport or reload either site.
+
+### Live side-by-side highlights
+
+Use the always-visible **Highlights: on/off** button at the top right (or
+`highlights=1` in a shared link). Magenta boxes mark changed content, styles,
+layout, or images; green marks elements added on B and orange marks removals
+from A. Turning highlights off removes all marks immediately without reloading
+or moving either page. Scrolling, navigation and resizing refresh the marks.
+
+This compares rendered DOM elements on accessible local previews, with a two
+CSS-pixel layout tolerance. It normalizes local ports and relay paths, waits
+for images/fonts, and checks loaded image pixels at 24×24 resolution, including
+same-path images served with different content. It is not a full pixel-diff or
+semantic merge: heavily restructured DOM may produce multiple marks. Background
+image pixels, cross-origin images that block canvas access, videos, canvas and
+nested iframe contents are not pixel-compared; the status explicitly reports
+unchecked image pixels. External inaccessible pages and mismatched viewport
+sizes report an unavailable status instead of claiming no differences.
+
+The status counts changed elements across the current documents; boxes appear
+only in the visible portion of each preview. Matching storefronts correctly show
+**No element differences**, even when their design-studio routes differ.

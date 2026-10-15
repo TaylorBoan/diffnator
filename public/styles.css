@@ -637,3 +637,14 @@ input[type="range"]::-moz-range-thumb {
   pointer-events: none;
   user-select: none;
 }
+
+/* Comparison marks never alter or block the embedded websites. */
+.diff-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 9; }
+.diff-mark { position: absolute; border: 2px solid #d946ef; background: rgba(217, 70, 239, .12); border-radius: 2px; }
+.diff-mark[data-kind~="added"] { border-color: #059669; background: rgba(5, 150, 105, .13); }
+.diff-mark[data-kind~="removed"] { border-color: #ea580c; background: rgba(234, 88, 12, .13); }
+.highlight-controls { position: fixed; top: 6px; right: 54px; z-index: 1090; display: flex; align-items: flex-end; flex-direction: column; gap: 3px; }
+.highlight-controls[hidden] { display: none; }
+#highlightToggle { padding: 4px 8px; border: 1px solid #575366; border-radius: 5px; background: #17141fe6; color: #fff; font: 11px/1.4 system-ui; cursor: pointer; }
+#highlightToggle[aria-pressed="true"] { border-color: #e879f9; }
+#highlightStatus { max-width: 290px; padding: 2px 5px; background: #17141fe6; color: #fff; border-radius: 3px; font: 10px/1.4 system-ui; }
